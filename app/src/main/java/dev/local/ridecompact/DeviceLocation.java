@@ -1,6 +1,7 @@
 package dev.local.ridecompact;
 
 import android.Manifest;
+import android.annotation.SuppressLint;
 import android.content.Context;
 import android.content.pm.PackageManager;
 import android.location.Location;
@@ -23,6 +24,7 @@ final class DeviceLocation {
     }
 
     /** @return {lat,lng} in GCJ02; throws with a user facing reason when no trusted fix exists. */
+    @SuppressLint("MissingPermission") // guarded by permitted() above; SecurityException is caught inside the loop
     static double[] requireGcj02(Context context) {
         if (!permitted(context)) throw new IllegalStateException("需要精确定位权限才能自动填写城市和行政区");
         LocationManager manager = (LocationManager) context.getSystemService(Context.LOCATION_SERVICE);
