@@ -1,0 +1,370 @@
+package dev.local.ridecompact;
+
+import android.Manifest;
+import android.app.AlertDialog;
+import android.content.Intent;
+import android.content.pm.PackageManager;
+import android.bluetooth.BluetoothManager;
+import android.os.Build;
+import android.location.Location;
+import android.location.LocationListener;
+import android.location.LocationManager;
+import android.net.Uri;
+import android.os.Bundle;
+import android.os.SystemClock;
+import android.view.View;
+import android.view.WindowManager;
+import android.widget.*;
+import androidx.activity.result.ActivityResultLauncher;
+import androidx.activity.result.contract.ActivityResultContracts;
+import androidx.appcompat.app.AppCompatActivity;
+import com.google.android.material.button.MaterialButton;
+import com.google.android.material.card.MaterialCardView;
+import com.google.android.material.switchmaterial.SwitchMaterial;
+import com.google.android.material.textfield.TextInputEditText;
+import com.google.android.material.textfield.TextInputLayout;
+import com.journeyapps.barcodescanner.ScanContract;
+import com.journeyapps.barcodescanner.ScanOptions;
+import dev.local.ridecompact.ui.MiuixComponents;
+import org.json.JSONObject;
+import java.io.ByteArrayOutputStream;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+
+public final class MainActivity extends AppCompatActivity {
+    private final ExecutorService executor=Executors.newSingleThreadExecutor();
+    private final RideState ride=new RideState();
+    private final List<View> controls=new ArrayList<>();
+    private SessionStore sessions;
+    private TextView account,vehicle,status,logs,price;
+    private EditText manual;
+    private Button prepare,unlock,close,sync;
+    private SwitchMaterial live;
+    private boolean busy=false;
+    private LocationManager locations;
+    private final LocationListener locationListener=location -> {};
+    private final ActivityResultLauncher<Intent> login=registerForActivityResult(new ActivityResultContracts.StartActivityForResult(), result -> {
+        if(result.getResultCode()==RESULT_OK) { live.setChecked(false); refreshAccount(); add("账号已更新，请刷新订单状态"); }
+    });
+    private final ActivityResultLauncher<String> export=registerForActivityResult(new ActivityResultContracts.CreateDocument("text/plain"), uri -> {
+        if(uri!=null) { String snapshot="RideCompact 0.2.0 · Android "+Build.VERSION.SDK_INT+"\n"+logs.getText(); task("导出诊断",()->{
+            try(var output=getContentResolver().openOutputStream(uri)) { if(output==null) throw new IllegalStateException("文件无法写入"); output.write(snapshot.getBytes(StandardCharsets.UTF_8)); }
+        }); }
+    });
+    private final ActivityResultLauncher<ScanOptions> scanner=registerForActivityResult(new ScanContract(), result -> {
+        if(result.getContents()!=null) try { selectBike(ScanParser.parse(result.getContents())); } catch(Exception e) { error(e.getMessage()); }
+    });
+    private final ActivityResultLauncher<String[]> permission=registerForActivityResult(new ActivityResultContracts.RequestMultiplePermissions(), result -> startLocation());
+    private final ActivityResultLauncher<String[]> importer=registerForActivityResult(new ActivityResultContracts.OpenDocument(), uri -> {
+        if(uri!=null) task("导入账号",()->{
+            String text=readDocument(uri);
+            JSONObject incoming=SessionStore.validate(AccountImporter.parse(text));
+            JSONObject previous=sessions.forReplacement();
+            String owner=getSharedPreferences("ride",0).getString("owner",previous==null?"":previous.optString("userGuid"));
+            if(!ride.canPrepare() && !owner.isEmpty() && !owner.equals(incoming.getString("userGuid"))) throw new IllegalStateException("存在待确认订单，仅能更新同一账号的会话");
+            sessions.save(incoming);
+            ui(()->{ if(ride.canPrepare()) ride.clear(); persist(); live.setChecked(false); refreshAccount(); add("已导入账号，未连接业务服务器"); });
+        });
+    });
+
+    @Override public void onCreate(Bundle saved) {
+        super.onCreate(saved);
+        getWindow().addFlags(WindowManager.LayoutParams.FLAG_SECURE);
+        sessions=new SessionStore(this);
+        var p=getSharedPreferences("ride",0);
+        ride.order=p.getString("order",""); ride.bike=p.getString("bike",""); ride.specialBike=p.getBoolean("specialBike",false);
+        String previous=p.getString("stage","IDLE");
+        if(!"IDLE".equals(previous) && !"ENDED".equals(previous)) {
+            ride.stage="CLOSING".equals(previous)?RideState.Stage.CLOSING:RideState.Stage.UNKNOWN;
+        }
+        if(!ride.canPrepare() && getSharedPreferences("ride",0).getString("owner","").isEmpty()) {
+            try { JSONObject identity=sessions.forReplacement(); if(identity!=null) getSharedPreferences("ride",0).edit().putString("owner",identity.getString("userGuid")).commit(); }catch(Exception ignored){}
+        }
+        buildUi(); refreshAccount(); update();
+    }
+    private int dp(int x) { return (int)(x*getResources().getDisplayMetrics().density+.5f); }
+    private TextView text(String value,int size,int color) {
+        TextView v=new TextView(this); v.setText(value); v.setTextSize(size); v.setTextColor(color); v.setPadding(0,dp(7),0,dp(7)); return v;
+    }
+    private Button button(String title,LinearLayout root,Runnable action) {
+        boolean primary=title.contains("确认开锁") || title.equals("扫码") || title.equals("还车") || title.contains("预校验");
+        MaterialButton b=new MaterialButton(this,null,primary?com.google.android.material.R.attr.materialButtonStyle:com.google.android.material.R.attr.materialButtonOutlinedStyle);
+        b.setText(title); b.setAllCaps(false); b.setMinHeight(dp(primary?54:48)); b.setTextSize(15); b.setCornerRadius(dp(18));
+        b.setInsetTop(4); b.setInsetBottom(4); b.setStateListAnimator(null);
+        if(primary) MiuixComponents.primaryAction(b);
+        else MiuixComponents.secondaryAction(b);
+        LinearLayout.LayoutParams params=new LinearLayout.LayoutParams(-1,-2); params.topMargin=dp(6); root.addView(b,params);
+        b.setOnClickListener(v->{ v.setAlpha(.72f); v.postDelayed(()->v.setAlpha(1f),120); action.run(); });
+        MiuixComponents.pressFeedback(b); controls.add(b); return b;
+    }
+    private MaterialCardView card(LinearLayout root,int top,String title,String subtitle) {
+        MaterialCardView card=new MaterialCardView(this);
+        card.setRadius(dp(22));
+        card.setCardElevation(0);
+        card.setCardBackgroundColor(0xffffffff);
+        card.setStrokeColor(0xffDCE9E4);
+        card.setStrokeWidth(dp(1));
+        LinearLayout body=new LinearLayout(this); body.setOrientation(LinearLayout.VERTICAL); body.setPadding(dp(18),dp(18),dp(18),dp(18));
+        card.addView(body,new FrameLayout.LayoutParams(-1,-2));
+        if(title!=null) { TextView heading=text(title,17,0xff19352E); heading.setTypeface(android.graphics.Typeface.DEFAULT,android.graphics.Typeface.BOLD); body.addView(heading); if(subtitle!=null) body.addView(text(subtitle,13,0xff64736E)); }
+        root.addView(card,new LinearLayout.LayoutParams(-1,-2));
+        ((LinearLayout.LayoutParams)card.getLayoutParams()).topMargin=top;
+        return card;
+    }
+    private void buildUi() {
+        ScrollView scroll=new ScrollView(this); LinearLayout root=new LinearLayout(this); root.setOrientation(LinearLayout.VERTICAL);
+        root.setPadding(dp(18),dp(16),dp(18),dp(28)); root.setBackgroundColor(0xffF4FAF7); scroll.addView(root); setContentView(scroll);
+
+        root.addView(text("轻骑",31,0xff16312B));
+        root.addView(text("扫码、预校验、开锁、还车的一屏流。",13,0xff60736D));
+
+        MaterialCardView sessionCard=card(root,dp(14),"账号",null);
+        LinearLayout sessionBody=(LinearLayout)sessionCard.getChildAt(0);
+        account=text("未导入账号",14,0xff087F70); sessionBody.addView(account);
+        button("手机号验证码登录",sessionBody,()->login.launch(new Intent(this,LoginActivity.class)));
+        button("导入账号 / HAR",sessionBody,()->importer.launch(new String[]{"*/*"}));
+        button("清除本地账号",sessionBody,()->new AlertDialog.Builder(this).setTitle("清除账号？")
+            .setMessage("只清除本机凭据，不会结束服务器上的骑行。")
+            .setNegativeButton("取消",null).setPositiveButton("清除",(d,w)->{
+                if(!ride.canPrepare()) { error("仍有待确认订单；可以导入同一账号的新会话，不能清除账号"); return; }
+                try { sessions.clear(); live.setChecked(false); refreshAccount(); }catch(Exception e){ error("清除失败"); }
+            }).show());
+        live=new SwitchMaterial(this); live.setText("连接真实账号"); live.setTextSize(16); live.setPadding(0,dp(12),0,dp(12)); sessionBody.addView(live); controls.add(live);
+        live.setOnCheckedChangeListener((v,checked)->{
+            update();
+            if(checked) {
+                new AlertDialog.Builder(this).setTitle("连接真实账号")
+                    .setMessage("将使用导入的登录会话访问官方服务。开锁会创建真实骑行订单，费用以服务端返回为准。当前城市编码请与实际所在城市一致。")
+                    .setNegativeButton("取消",(d,w)->live.setChecked(false)).setPositiveButton("继续",(d,w)->permission.launch(Build.VERSION.SDK_INT>=31?new String[]{Manifest.permission.ACCESS_FINE_LOCATION,Manifest.permission.ACCESS_COARSE_LOCATION,Manifest.permission.BLUETOOTH_CONNECT}:new String[]{Manifest.permission.ACCESS_FINE_LOCATION,Manifest.permission.ACCESS_COARSE_LOCATION}))
+                    .setOnCancelListener(d->live.setChecked(false)).show();
+            }
+        });
+
+        MaterialCardView rideCard=card(root,dp(14),"车辆与操作",null);
+        LinearLayout rideBody=(LinearLayout)rideCard.getChildAt(0);
+        rideBody.addView(text("车辆",13,0xff65716C));
+        manual=new EditText(this); manual.setHint("车号"); manual.setInputType(2); manual.setSingleLine(true); rideBody.addView(manual); controls.add(manual);
+        button("扫码",rideBody,()->{ if(!ride.canPrepare()) { error("请先处理当前订单"); return; } ScanOptions options=new ScanOptions(); options.setDesiredBarcodeFormats(ScanOptions.QR_CODE); options.setPrompt(""); options.setBeepEnabled(false); options.setCaptureActivity(PortraitScanActivity.class); options.setOrientationLocked(true); scanner.launch(options); });
+        vehicle=text("尚未选择车辆",16,0xff172C26); rideBody.addView(vehicle);
+        price=text("",15,0xff925710); rideBody.addView(price);
+        prepare=button("预校验 / 计费规则",rideBody,this::prepare);
+        unlock=button("确认开锁",rideBody,this::confirmOpen);
+        close=button("还车",rideBody,this::prepareClose);
+        sync=button("刷新订单状态",rideBody,this::sync);
+        button("打开官方 App",rideBody,()->{ Intent intent=getPackageManager().getLaunchIntentForPackage("com.jingyao.easybike"); if(intent==null) error("未安装官方 App"); else startActivity(intent); });
+        button("导出诊断记录",rideBody,()->export.launch("ride-compact-diagnostic.txt"));
+
+        MaterialCardView statusCard=card(root,dp(14),"状态",null);
+        LinearLayout statusBody=(LinearLayout)statusCard.getChildAt(0);
+        status=text("无活动订单",16,0xff172C26); statusBody.addView(status);
+
+        MaterialCardView logCard=card(root,dp(14),"事件记录",null);
+        LinearLayout logBody=(LinearLayout)logCard.getChildAt(0);
+        logs=text("",12,0xff34453F); logs.setTextIsSelectable(true); logs.setPadding(dp(12),dp(12),dp(12),dp(12)); logs.setBackgroundColor(0xffffffff); logBody.addView(logs);
+    }
+    private void refreshAccount() {
+        try { JSONObject s=sessions.load(); account.setText(s==null?"未导入账号":"账号已导入 · 城市 "+s.getString("cityCode")+" / "+s.getString("adCode")); }
+        catch(SessionStore.RecoveryRequired e) { account.setText("本地密钥失效，请重新导入或短信登录"); }
+        catch(Exception e) { account.setText("账号读取失败："+e.getClass().getSimpleName()); }
+        update();
+    }
+    private void update() {
+        if(prepare==null) return;
+        boolean authorized=false; try { authorized=sessions.load()!=null; }catch(Exception ignored){}
+        for(View view:controls) view.setEnabled(!busy);
+        boolean active=authorized && live.isChecked() && !busy;
+        prepare.setEnabled(active&&ride.canPrepare()); unlock.setEnabled(active&&ride.canOpen(System.currentTimeMillis()));
+        close.setEnabled(active&&ride.canClose()); sync.setEnabled(active);
+        manual.setEnabled(!busy&&ride.canPrepare());
+        vehicle.setText(ride.bike.isEmpty()?"尚未选择车辆":"车辆 "+mask(ride.bike)+(ride.specialBike?" · 服务端识别的特殊车型":""));
+        String stage;
+        switch(ride.stage) {
+            case PREPARED: stage="等待确认开锁"; break;
+            case OPENING: stage="开锁请求已提交，等待确认"; break;
+            case RIDING: stage="骑行中"; break;
+            case CLOSING: stage="关锁请求已提交，等待确认"; break;
+            case UNKNOWN: stage="订单状态待确认"; break;
+            case ENDED: stage="骑行已结束"; break;
+            default: stage="无活动订单";
+        }
+        status.setText(stage+(ride.order.isEmpty()?"":"\n订单 "+mask(ride.order)));
+    }
+    private void selectBike(ScanParser.Result selected) {
+        if(!ride.canPrepare()) throw new IllegalStateException("当前订单尚未处理完成");
+        ride.clear(); ride.bike=selected.bikeNo; manual.setText(ride.bike); price.setText(""); persist(); update(); add("车辆已识别 · "+selected.source+" · "+mask(ride.bike));
+    }
+    private void prepare() {
+        if(!ride.canPrepare()) return;
+        try { selectBike(ScanParser.parse(manual.getText().toString())); }catch(Exception e){ error(e.getMessage()); return; }
+        final String bike=ride.bike;
+        final double[] position;
+        try { position=currentLocation(); } catch(Exception e) { error(e.getMessage()); return; }
+        network("预校验",()->{
+            JSONObject prepared=api().prepare(bike,position);
+            String order=prepared.getString("orderGuid"),rule=prepared.getString("priceRule");
+            final boolean specialBike=prepared.optBoolean("specialBike",false);
+            ui(()->{ ride.prepared(bike,order,System.currentTimeMillis(),specialBike); price.setText(rule); persist(); update(); add("预校验通过，尚未创建骑行"+(specialBike?" · 服务端已识别特殊车型":"")); });
+        });
+    }
+    private void confirmOpen() {
+        if(!ride.canOpen(System.currentTimeMillis())) { error("预校验已过期，请先刷新订单"); return; }
+        new AlertDialog.Builder(this).setTitle("确认开锁")
+            .setMessage("车辆 "+mask(ride.bike)+"\n"+price.getText()+"\n\n将创建真实骑行订单。")
+            .setNegativeButton("取消",null).setPositiveButton("确认开锁",(d,w)->{
+                try {
+                    double[] position=currentLocation();
+                    ride.opening(System.currentTimeMillis()); persist(); update();
+                    final String bike=ride.bike,order=ride.order;
+                    network("提交开锁",()->{
+                        JSONObject result=api().create(bike,order,position);
+
+                        if(!result.optBoolean("result") || !order.equals(result.optString("rideId"))) throw new IllegalStateException("创建结果不明确，请刷新订单或返回官方 App");
+                        add("创建请求已受理；等待服务器确认");
+                        pollRide(order,20);
+                    });
+                }catch(Exception e){ error(e.getMessage()); }
+            }).show();
+    }
+    private void prepareClose() {
+        if(!ride.canClose()) return;
+        final String order=ride.order,bike=ride.bike;
+        network("还车位置校验",()->{
+            double[] position=currentLocation(); RideApi api=api();
+            JSONObject result=api.preClose(order,bike,position,0,0);
+            long deadline=SystemClock.elapsedRealtime()+20000;
+            if(result.optInt("causeType",-1)==1102) throw ApiResponse.closeFailure(result);
+            if(result.optInt("causeType",-1)==1104) throw ApiResponse.closeFailure(result);
+            while(result.optInt("status",-1)==2 && result.optInt("causeType",-1)==1101 && SystemClock.elapsedRealtime()<deadline) {
+                Thread.sleep(1500); result=api.preClose(order,bike,currentLocation(),1,0);
+            }
+            if(result.optInt("status",-1)!=3 || result.optInt("causeType",-1)!=1103 || result.optInt("penaltyFree",0)!=1) throw ApiResponse.closeFailure(result);
+            long checkedAt=SystemClock.elapsedRealtime();
+            ui(()->new AlertDialog.Builder(this).setTitle("确认还车").setMessage("车辆 "+mask(bike)+"\n当前还车校验已通过，是否提交关锁？")
+                .setNegativeButton("取消",null).setPositiveButton("确认还车",(d,w)->{
+                    try {
+                        if(SystemClock.elapsedRealtime()-checkedAt>30000) throw new IllegalStateException("位置校验已过期，请重新还车校验");
+                        double[] fresh=currentLocation(); ride.closing(); persist(); update();
+                        network("提交关锁",()->{
+                            JSONObject sent=api().preClose(order,bike,fresh,1,2);
+                            add("关锁已提交，阶段 "+sent.optInt("status",-1)+"；不自动重发关锁请求");
+                            pollRide(order,20);
+                        });
+                    } catch(Exception e){ error(e.getMessage()); }
+                }).show());
+        });
+    }
+    private void pollRide(String expectedOrder,int seconds) throws Exception {
+        long end=SystemClock.elapsedRealtime()+seconds*1000L;
+        while(SystemClock.elapsedRealtime()<end) {
+            Thread.sleep(1800);
+            JSONObject data=api().checkRide(),info=data.optJSONObject("rideInfo");
+            if(data.optBoolean("_noRide")) {
+                JSONObject order=api().orderStatus(expectedOrder);
+                if(order.optInt("rideStatus",-1)==30 && showEnd(expectedOrder)) {
+                    ui(()->{ ride.stage=RideState.Stage.ENDED; persist(); update(); }); return;
+                }
+                continue;
+            }
+            if(info==null) continue;
+            String order=rawOrder(info);
+            if(!expectedOrder.equals(order)) throw new IllegalStateException("返回订单不一致，请打开官方 App");
+            int current=info.optInt("rideStatus",-1);
+            boolean closing=ride.stage==RideState.Stage.CLOSING;
+            if(current==2 || (current==0&&!closing)) { applyRide(info); if(current==2) showEnd(expectedOrder); return; }
+        }
+        add("等待超时，结果尚未确认。请刷新订单；不要重复创建或关锁");
+    }
+    private void sync() {
+        network("刷新订单",()->{
+            JSONObject data=api().checkRide(),info=data.optJSONObject("rideInfo");
+            if(data.optBoolean("_noRide")) { noRide(); return; }
+            if(info==null || rawOrder(info).isEmpty()) {
+                throw new IllegalStateException("user.tw.ride.check 响应缺少订单标识，未修改本地状态");
+            }
+            applyRide(info);
+            if(info.optInt("rideStatus",-1)==2) showEnd(rawOrder(info));
+        });
+    }
+    private void noRide() throws Exception {
+        if(ride.stage==RideState.Stage.IDLE || ride.stage==RideState.Stage.ENDED || ride.stage==RideState.Stage.PREPARED || (ride.stage==RideState.Stage.UNKNOWN&&ride.order.isEmpty())) {
+            ui(()->{ ride.clear(); persist(); update(); add("301：无骑行中订单，可以扫码"); }); return;
+        }
+        JSONObject result=api().orderStatus(ride.order); int main=result.optInt("rideStatus",-1),sub=result.optInt("subStatus",-1);
+        add("无骑行中订单；已提交订单状态 "+main+" / "+sub);
+        if(main==30 && showEnd(ride.order)) ui(()->{ ride.stage=RideState.Stage.ENDED; persist(); update(); });
+    }
+    private String rawOrder(JSONObject info) { String raw=info.optString("originGuid",info.optString("rideGuid")); return raw.startsWith("TW")?raw.substring(2):raw; }
+    private void applyRide(JSONObject info) {
+        String order=rawOrder(info),bike=info.optString("bikeNo"); int serverStatus=info.optInt("rideStatus",-1);
+        ui(()->{
+            if(!ride.order.isEmpty()&&!ride.order.equals(order) && ride.stage!=RideState.Stage.IDLE && ride.stage!=RideState.Stage.ENDED) { error("服务器订单与本地操作不一致，请在官方 App 确认"); return; }
+            ride.order=order; ride.bike=bike; ride.observed(serverStatus); persist(); update();
+            add("服务器状态 "+serverStatus+" · 骑行 "+info.optInt("rideTimeInSeconds",0)+" 秒");
+        });
+    }
+    private boolean showEnd(String order) throws Exception {
+        JSONObject end=api().end(order),trade=end.optJSONObject("tradeRegionInfo");
+        if(trade==null || trade.optInt("orderStatus",-1)!=2) { add("关锁后结算尚未确认"); return false; }
+        JSONObject details=trade.optJSONObject("orderInfo"),rideInfo=end.optJSONObject("rideRegionInfo");
+        if(details!=null) add("结算已确认 · 应付 "+details.optString("payAmount","?")+" 元"+(rideInfo==null?"":" · "+rideInfo.optInt("rideDuration",0)+" 秒 / "+rideInfo.optString("rideDistance","?")+" 公里"));
+        return true;
+    }
+    private void persist() {
+        var edit=getSharedPreferences("ride",0).edit().putString("order",ride.order).putString("bike",ride.bike).putBoolean("specialBike",ride.specialBike).remove("campusBike").putString("stage",ride.stage.name());
+        if(ride.canPrepare()) edit.remove("owner");
+        else try { JSONObject owner=sessions.forReplacement(); if(owner!=null) edit.putString("owner",owner.getString("userGuid")); }catch(Exception ignored){}
+        edit.commit();
+    }
+    private RideApi api() throws Exception {
+        JSONObject session=sessions.load(); if(session==null) throw new IllegalStateException("请先导入账号或登录");
+        boolean enabled=false;
+        try { BluetoothManager manager=(BluetoothManager)getSystemService(BLUETOOTH_SERVICE); enabled=manager!=null&&manager.getAdapter()!=null&&manager.getAdapter().isEnabled(); }catch(SecurityException ignored){}
+        return new RideApi(session,this::add,enabled);
+    }
+    private void network(String title,Work work) { if(!live.isChecked()) { error("尚未连接真实账号"); return; } task(title,work); }
+    private void task(String title,Work work) {
+        if(busy) return; busy=true; update(); add(title+"…");
+        executor.execute(()->{ try { work.run(); }catch(Exception e){ ui(()->error(title+"："+(e instanceof ApiResponse.Failure?e.getMessage():e instanceof org.json.JSONException?"JSON 格式不正确":ApiResponse.clean(e.getMessage())))); }
+            finally { ui(()->{ busy=false; update(); }); }
+        });
+    }
+    private interface Work { void run() throws Exception; }
+    private String readDocument(Uri uri) throws Exception {
+        try(InputStream input=getContentResolver().openInputStream(uri);ByteArrayOutputStream output=new ByteArrayOutputStream()) {
+            if(input==null) throw new IllegalArgumentException("文件无法读取"); byte[] buffer=new byte[8192]; int n;
+            while((n=input.read(buffer))!=-1) { if(output.size()+n>16*1024*1024) throw new IllegalArgumentException("文件超过 16MB"); output.write(buffer,0,n); }
+            return output.toString(StandardCharsets.UTF_8.name());
+        }
+    }
+    private void startLocation() {
+        if(checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION)!=PackageManager.PERMISSION_GRANTED) return;
+        locations=(LocationManager)getSystemService(LOCATION_SERVICE);
+        for(String provider:new String[]{LocationManager.GPS_PROVIDER,LocationManager.NETWORK_PROVIDER}) try {
+            if(locations.isProviderEnabled(provider)) locations.requestLocationUpdates(provider,3000,0,locationListener);
+        }catch(Exception ignored){}
+    }
+    private double[] currentLocation() throws Exception {
+        if(checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION)!=PackageManager.PERMISSION_GRANTED) throw new IllegalStateException("需要精确定位权限");
+        LocationManager manager=(LocationManager)getSystemService(LOCATION_SERVICE); Location best=null;
+        for(String provider:manager.getProviders(true)) {
+            Location candidate=manager.getLastKnownLocation(provider);
+            if(candidate==null || !candidate.hasAccuracy() || candidate.getAccuracy()>80 || candidate.isFromMockProvider()) continue;
+            long age=SystemClock.elapsedRealtimeNanos()-candidate.getElapsedRealtimeNanos();
+            if(age<0 || age>30000000000L) continue;
+            if(best==null || candidate.getElapsedRealtimeNanos()>best.getElapsedRealtimeNanos()) best=candidate;
+        }
+        if(best==null) throw new IllegalStateException("等待 30 秒内的新定位，精度须优于 80 米");
+        return Coordinates.toGcj02(best.getLatitude(),best.getLongitude());
+    }
+    private void ui(Runnable runnable) { runOnUiThread(()->{ if(!isDestroyed()&&!isFinishing()) runnable.run(); }); }
+    private String mask(String value) { return value.length()<5?"****":"****"+value.substring(value.length()-4); }
+    private void add(String message) { ui(()->{ String value=message+"\n"+logs.getText(); logs.setText(value.length()>5000?value.substring(0,5000):value); }); }
+    private void error(String message) { add(message); Toast.makeText(this,message,Toast.LENGTH_LONG).show(); }
+    @Override protected void onResume() { super.onResume(); startLocation(); }
+    @Override protected void onPause() { if(locations!=null) locations.removeUpdates(locationListener); super.onPause(); }
+    @Override protected void onDestroy() { executor.shutdownNow(); super.onDestroy(); }
+}

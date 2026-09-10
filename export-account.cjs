@@ -1,0 +1,16 @@
+'use strict';
+const fs=require('node:fs');
+const path=require('node:path');
+const entries=JSON.parse(fs.readFileSync(path.resolve(__dirname,'../../apmgw.hellobike.com_2026_09_07_11_42_00.har'),'utf8')).log.entries;
+const parsed=entries.map(e=>{try{return {time:e.startedDateTime,req:JSON.parse(e.request.postData?.text),res:JSON.parse(e.response.content?.text)}}catch{return null}}).filter(Boolean);
+const pre=parsed.find(e=>e.req.action==='user.ride.pre.ride');
+const create=parsed.find(e=>e.req.action==='user.ride.create' && e.req.token===pre?.req.token);
+if(!pre || !create) throw new Error('Matching pre-ride/create account records not found');
+const account={};
+for(const key of ['token','ticket','systemCode','version','h5Version','cityCode','adCode']) account[key]=String(create.req[key]||'');
+account.userGuid=String(pre.res.data.userGuid);
+const output=path.join(__dirname,'private','account.json');
+fs.mkdirSync(path.dirname(output),{recursive:true,mode:0o700});
+fs.writeFileSync(output,JSON.stringify(account,null,2)+'\n',{mode:0o600});
+fs.chmodSync(output,0o600);
+console.log('Wrote private/account.json (0600); credentials omitted from console.');

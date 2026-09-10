@@ -1,0 +1,9 @@
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android" android:layout_width="match_parent" android:layout_height="match_parent" android:background="#000000">
+    <com.journeyapps.barcodescanner.DecoratedBarcodeView android:id="@+id/zxing_barcode_scanner" android:layout_width="match_parent" android:layout_height="match_parent"/>
+    <LinearLayout android:layout_width="match_parent" android:layout_height="64dp" android:orientation="horizontal" android:gravity="center_vertical" android:background="#A0000000" android:paddingHorizontal="12dp">
+        <ImageButton android:id="@+id/scan_back" android:layout_width="48dp" android:layout_height="48dp" android:src="@drawable/ic_back" android:background="?android:attr/selectableItemBackgroundBorderless" android:contentDescription="返回" android:tooltipText="返回"/>
+        <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="扫码" android:textColor="#FFFFFF" android:textSize="18sp" android:gravity="center"/>
+        <Space android:layout_width="48dp" android:layout_height="48dp"/>
+    </LinearLayout>
+    <ImageButton android:id="@+id/scan_torch" android:layout_width="64dp" android:layout_height="64dp" android:layout_gravity="bottom|center_horizontal" android:layout_marginBottom="48dp" android:padding="18dp" android:src="@drawable/ic_flashlight" android:background="@drawable/scan_tool_background" android:contentDescription="打开手电筒" android:tooltipText="打开手电筒"/>
+</FrameLayout>

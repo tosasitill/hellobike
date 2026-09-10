@@ -1,0 +1,24 @@
+package dev.local.ridecompact;
+
+final class RideState {
+    enum Stage { IDLE, PREPARED, OPENING, RIDING, CLOSING, UNKNOWN, ENDED }
+    Stage stage=Stage.IDLE;
+    String bike="";
+    String order="";
+    boolean specialBike=false;
+    long preparedAt=0;
+    boolean canPrepare() { return stage==Stage.IDLE || stage==Stage.ENDED; }
+    boolean canOpen(long now) { return stage==Stage.PREPARED && !order.isEmpty() && now>=preparedAt && now-preparedAt<60000; }
+    boolean canClose() { return stage==Stage.RIDING && !order.isEmpty() && !bike.isEmpty(); }
+    void prepared(String bike,String order,long now) { prepared(bike,order,now,false); }
+    void prepared(String bike,String order,long now,boolean specialBike) { this.bike=bike; this.order=order; this.preparedAt=now; this.specialBike=specialBike; stage=Stage.PREPARED; }
+    void opening(long now) { if(!canOpen(now)) throw new IllegalStateException("预校验已失效，请同步订单"); stage=Stage.OPENING; }
+    void closing() { if(!canClose()) throw new IllegalStateException("当前订单状态不允许还车"); stage=Stage.CLOSING; }
+    void observed(int status) {
+        if(status==2) stage=Stage.ENDED;
+        else if(status==0 && stage!=Stage.CLOSING) stage=Stage.RIDING;
+        else if(status!=0) stage=Stage.UNKNOWN;
+    }
+    void clear() { stage=Stage.IDLE; bike=""; order=""; specialBike=false; preparedAt=0; }
+}
+

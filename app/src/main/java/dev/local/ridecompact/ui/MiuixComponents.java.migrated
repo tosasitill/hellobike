@@ -1,0 +1,49 @@
+package dev.local.ridecompact.ui;
+
+import android.content.res.ColorStateList;
+import android.graphics.Typeface;
+import android.view.View;
+import android.widget.TextView;
+import com.google.android.material.button.MaterialButton;
+
+/** Small View-based equivalents of the Miuix surface, group and action tokens. */
+public final class MiuixComponents {
+    public static final int SURFACE = 0xffffffff;
+    public static final int PAGE = 0xffF4FAF7;
+    public static final int PRIMARY = 0xff006B5F;
+    public static final int ON_SURFACE = 0xff19352E;
+    public static final int SECONDARY = 0xff64736E;
+    public static final int OUTLINE = 0xffDCE9E4;
+
+    private MiuixComponents() { }
+
+    public static void heading(TextView view) {
+        view.setTextColor(ON_SURFACE);
+        view.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+    }
+
+    public static void primaryAction(MaterialButton button) {
+        button.setTextColor(0xffffffff);
+        button.setBackgroundTintList(ColorStateList.valueOf(PRIMARY));
+        button.setCornerRadius(54);
+        button.setStateListAnimator(null);
+    }
+
+    public static void secondaryAction(MaterialButton button) {
+        button.setTextColor(PRIMARY);
+        button.setStrokeColor(ColorStateList.valueOf(0xffB8D5CC));
+        button.setStrokeWidth(1);
+        button.setCornerRadius(54);
+        button.setStateListAnimator(null);
+    }
+
+    public static void pressFeedback(View view) {
+        view.setOnTouchListener((v, event) -> {
+            switch (event.getActionMasked()) {
+                case 0: v.setAlpha(.72f); break;
+                case 1: case 3: v.setAlpha(1f); break;
+            }
+            return false;
+        });
+    }
+}

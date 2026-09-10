@@ -1,0 +1,137 @@
+package dev.local.ridecompact;
+
+import android.app.AlertDialog;
+import android.content.pm.PackageManager;
+import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
+import android.text.InputType;
+import android.view.View;
+import android.view.WindowManager;
+import android.widget.*;
+import androidx.appcompat.app.AppCompatActivity;
+import org.json.JSONObject;
+import java.security.MessageDigest;
+import java.util.UUID;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ExecutorService;
+
+public final class LoginActivity extends AppCompatActivity {
+    private final ExecutorService executor=Executors.newSingleThreadExecutor();
+    private final Handler handler=new Handler(Looper.getMainLooper());
+    private EditText mobile,code,city,adCode;
+    private TextView status;
+    private Button send,submit;
+    private CheckBox consent;
+    private boolean busy;
+    private String confirmedPhone="",loginId;
+    private final Runnable countdown=new Runnable() { public void run() { update(); handler.postDelayed(this,1000); } };
+    @Override public void onCreate(Bundle saved) {
+        super.onCreate(saved); getWindow().addFlags(WindowManager.LayoutParams.FLAG_SECURE);
+        loginId=UUID.randomUUID().toString();
+        ScrollView scroll=new ScrollView(this); LinearLayout root=new LinearLayout(this); root.setOrientation(LinearLayout.VERTICAL); root.setPadding(dp(24),dp(20),dp(24),dp(30)); root.setBackgroundColor(0xffF5F7F8); scroll.addView(root); setContentView(scroll);
+        Button back=new Button(this); back.setText("返回"); root.addView(back); back.setOnClickListener(v->finish());
+        TextView title=new TextView(this); title.setText("手机号登录"); title.setTextSize(26); root.addView(title);
+        mobile=input(root,"手机号",InputType.TYPE_CLASS_PHONE); mobile.setAutofillHints(View.AUTOFILL_HINT_PHONE);
+        LinearLayout region=new LinearLayout(this); root.addView(region);
+        city=input(region,"城市编码",InputType.TYPE_CLASS_NUMBER); adCode=input(region,"行政区编码",InputType.TYPE_CLASS_NUMBER);
+        String cityValue=getSharedPreferences("region",0).getString("cityCode","010"),adValue=getSharedPreferences("region",0).getString("adCode","110108");
+        city.setText(cityValue); adCode.setText(adValue);
+        try { JSONObject old=new SessionStore(this).forReplacement(); if(old!=null) { city.setText(old.optString("cityCode")); adCode.setText(old.optString("adCode")); } }catch(Exception ignored){}
+        code=input(root,"短信验证码",InputType.TYPE_CLASS_NUMBER|InputType.TYPE_NUMBER_VARIATION_PASSWORD); code.setSaveEnabled(false); mobile.setSaveEnabled(false);
+        consent=new CheckBox(this); consent.setText("确认使用此手机号接收验证码并登录"); root.addView(consent); consent.setOnCheckedChangeListener((v,c)->update());
+        send=new Button(this); root.addView(send); send.setOnClickListener(v->send());
+        submit=new Button(this); submit.setText("登录"); root.addView(submit); submit.setOnClickListener(v->login());
+        status=new TextView(this); status.setPadding(0,dp(14),0,0); status.setTextSize(14); status.setTextColor(0xff46554E); status.setText("未发送验证码"); root.addView(status);
+        handler.post(countdown);
+    }
+    private int dp(int x) { return (int)(x*getResources().getDisplayMetrics().density+.5f); }
+    private EditText input(LinearLayout parent,String hint,int type) {
+        EditText view=new EditText(this); view.setHint(hint); view.setInputType(type); view.setSingleLine(true);
+        parent.addView(view,new LinearLayout.LayoutParams(parent.getOrientation()==LinearLayout.HORIZONTAL?0:-1,dp(56),parent.getOrientation()==LinearLayout.HORIZONTAL?1:0));
+        return view;
+    }
+    private long seconds() { long until=getSharedPreferences("login",0).getLong("smsUntil",0); return Math.max(0,Math.min(60,(until-System.currentTimeMillis()+999)/1000)); }
+    private void update() {
+        if(send==null) return;
+        long seconds=seconds(); send.setText(seconds>0?seconds+" 秒后可重发":"获取验证码");
+        send.setEnabled(!busy&&consent.isChecked()&&seconds==0); submit.setEnabled(!busy&&consent.isChecked());
+        mobile.setEnabled(!busy); code.setEnabled(!busy); city.setEnabled(!busy); adCode.setEnabled(!busy); consent.setEnabled(!busy);
+    }
+    private LoginApi api() throws Exception {
+        var settings=getSharedPreferences("login",0); String client=settings.getString("clientId",null);
+        if(client==null) { client=UUID.randomUUID().toString(); settings.edit().putString("clientId",client).commit(); }
+        byte[] signature=getPackageManager().getPackageInfo(getPackageName(),PackageManager.GET_SIGNING_CERTIFICATES).signingInfo.getApkContentsSigners()[0].toByteArray();
+        String hash=android.util.Base64.encodeToString(MessageDigest.getInstance("SHA-256").digest(signature),android.util.Base64.NO_WRAP);
+        return new LoginApi(Gateway.https(message->show(message)),client,hash);
+    }
+    private String phoneHash(String phone) throws Exception {
+        byte[] hash=MessageDigest.getInstance("SHA-256").digest((getSharedPreferences("login",0).getString("clientId","")+":"+phone).getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        return android.util.Base64.encodeToString(hash,android.util.Base64.NO_WRAP);
+    }
+    private void sent(String phone) throws Exception {
+        confirmedPhone=phone;
+        getSharedPreferences("login",0).edit().putString("smsFor",phoneHash(phone)).putLong("smsAt",System.currentTimeMillis()).commit();
+    }
+    private void send() {
+        if(busy || seconds()>0 || !consent.isChecked()) return;
+        String phone=mobile.getText().toString().trim(),c=city.getText().toString().trim(),a=adCode.getText().toString().trim();
+        try { LoginApi.phone(phone); }catch(Exception e){ show(e.getMessage()); return; }
+        new AlertDialog.Builder(this).setTitle("发送验证码").setMessage("发送至 "+phone.substring(0,3)+"****"+phone.substring(7)+"？")
+            .setNegativeButton("取消",null).setPositiveButton("发送",(d,w)->{
+                if(busy || seconds()>0) return;
+                getSharedPreferences("login",0).edit().putLong("smsUntil",System.currentTimeMillis()+60000).commit();
+                work(()->{
+                    try { api().send(phone,c,a); sent(phone); show("服务器已确认短信发送"); }
+                    catch(LoginApi.CaptchaRequired challenge) {
+                        JSONObject images=api().slide(phone,c,a);
+                        runOnUiThread(()->{ if(!isDestroyed()) showSlider(images,phone,c,a); });
+                    }
+                });
+            }).show();
+    }
+    private void showSlider(JSONObject images,String phone,String city,String adCode) {
+        try {
+            LinearLayout content=new LinearLayout(this); content.setOrientation(LinearLayout.VERTICAL); content.setPadding(dp(16),dp(8),dp(16),dp(8));
+            SliderChallengeView image=new SliderChallengeView(this,images); content.addView(image,new LinearLayout.LayoutParams(-1,-2));
+            SeekBar slider=new SeekBar(this); slider.setContentDescription("滑块位置"); slider.setMax(image.maximum()); content.addView(slider,new LinearLayout.LayoutParams(-1,dp(56)));
+            slider.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+                public void onProgressChanged(SeekBar bar,int progress,boolean fromUser) { image.offset(progress); }
+                public void onStartTrackingTouch(SeekBar bar) {}
+                public void onStopTrackingTouch(SeekBar bar) {}
+            });
+            new AlertDialog.Builder(this).setTitle("滑块验证").setView(content).setNegativeButton("取消",null).setPositiveButton("验证",(d,w)->{
+                int offset=image.offset();
+                work(()->{ api().submitSlide(phone,city,adCode,offset); sent(phone); show("滑块验证通过，服务器已确认短信发送"); });
+            }).show();
+        }catch(Exception e){ show(ApiResponse.clean(e.getMessage())); }
+    }
+    private void login() {
+        if(busy || !consent.isChecked()) return;
+        String phone=mobile.getText().toString().trim(),otp=code.getText().toString().trim(),c=city.getText().toString().trim(),a=adCode.getText().toString().trim();
+        try {
+            var stored=getSharedPreferences("login",0); long age=System.currentTimeMillis()-stored.getLong("smsAt",0);
+            if(!confirmedPhone.equals(phone) && !(age>=0&&age<300000&&phoneHash(phone).equals(stored.getString("smsFor","")))) { show("请先为当前手机号成功发送验证码"); return; }
+        }catch(Exception e){ show("短信会话不可用，请重新获取验证码"); return; }
+        work(()->{
+            JSONObject incoming=api().login(phone,otp,c,a,loginId);
+            SessionStore store=new SessionStore(this); JSONObject old=store.forReplacement();
+            String pending=getSharedPreferences("ride",0).getString("stage","IDLE");
+            String owner=getSharedPreferences("ride",0).getString("owner",old==null?"":old.optString("userGuid"));
+            if(!"IDLE".equals(pending)&&!"ENDED".equals(pending)&&!owner.isEmpty()&&!owner.equals(incoming.getString("userGuid"))) throw new IllegalStateException("存在待确认订单，不能换成另一个账号");
+            store.save(incoming);
+            getSharedPreferences("login",0).edit().remove("smsFor").remove("smsAt").commit();
+            getSharedPreferences("region",0).edit().putString("cityCode",c).putString("adCode",a).commit();
+            runOnUiThread(()->{ if(!isDestroyed()) { code.setText(""); setResult(RESULT_OK); finish(); } });
+        });
+    }
+    private interface Work { void run() throws Exception; }
+    private void work(Work work) {
+        if(busy) return; busy=true; update();
+        executor.execute(()->{ try { work.run(); }catch(Exception e){ show(e instanceof ApiResponse.Failure?e.getMessage():ApiResponse.clean(e.getMessage())); }
+            finally { runOnUiThread(()->{ if(!isDestroyed()) { busy=false; update(); } }); }
+        });
+    }
+    private void show(String text) { runOnUiThread(()->{ if(!isDestroyed()) status.setText(text); }); }
+    @Override protected void onDestroy() { handler.removeCallbacksAndMessages(null); executor.shutdownNow(); super.onDestroy(); }
+}
