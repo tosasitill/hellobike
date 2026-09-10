@@ -3,10 +3,12 @@ package dev.local.ridecompact;
 import android.content.pm.ActivityInfo;
 import android.content.pm.PackageManager;
 import android.os.Bundle;
+import android.view.View;
 import android.widget.ImageButton;
 import com.journeyapps.barcodescanner.CaptureActivity;
 import com.journeyapps.barcodescanner.DecoratedBarcodeView;
 import com.journeyapps.barcodescanner.camera.CameraSettings;
+import dev.local.ridecompact.ui.MiuixComponents;
 
 public final class PortraitScanActivity extends CaptureActivity {
     private ImageButton torch;
@@ -34,10 +36,13 @@ public final class PortraitScanActivity extends CaptureActivity {
         torch.setEnabled(getPackageManager().hasSystemFeature(PackageManager.FEATURE_CAMERA_FLASH));
         torch.setOnClickListener(v->{ if(lit) scanner.setTorchOff(); else scanner.setTorchOn(); });
         scanner.setTorchListener(new DecoratedBarcodeView.TorchListener() {
-            public void onTorchOn() { lit=true; torch.setSelected(true); torch.setAlpha(1f); torch.setContentDescription("关闭手电筒"); torch.setTooltipText("关闭手电筒"); }
-            public void onTorchOff() { lit=false; torch.setSelected(false); torch.setAlpha(.65f); torch.setContentDescription("打开手电筒"); torch.setTooltipText("打开手电筒"); }
+            public void onTorchOn() { lit=true; torch.setSelected(true); torch.setContentDescription("关闭手电筒"); torch.setTooltipText("关闭手电筒"); }
+            public void onTorchOff() { lit=false; torch.setSelected(false); torch.setContentDescription("打开手电筒"); torch.setTooltipText("打开手电筒"); }
         });
-        findViewById(R.id.scan_back).setOnClickListener(v->finish());
+        View back=findViewById(R.id.scan_back);
+        back.setOnClickListener(v->finish());
+        MiuixComponents.pressFeedback(back);
+        MiuixComponents.pressFeedback(torch);
         return scanner;
     }
 }

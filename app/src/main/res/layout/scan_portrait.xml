@@ -1,9 +1,15 @@
-<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android" android:layout_width="match_parent" android:layout_height="match_parent" android:background="#000000">
-    <com.journeyapps.barcodescanner.DecoratedBarcodeView android:id="@+id/zxing_barcode_scanner" android:layout_width="match_parent" android:layout_height="match_parent"/>
-    <LinearLayout android:layout_width="match_parent" android:layout_height="64dp" android:orientation="horizontal" android:gravity="center_vertical" android:background="#A0000000" android:paddingHorizontal="12dp">
-        <ImageButton android:id="@+id/scan_back" android:layout_width="48dp" android:layout_height="48dp" android:src="@drawable/ic_back" android:background="?android:attr/selectableItemBackgroundBorderless" android:contentDescription="返回" android:tooltipText="返回"/>
-        <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="扫码" android:textColor="#FFFFFF" android:textSize="18sp" android:gravity="center"/>
-        <Space android:layout_width="48dp" android:layout_height="48dp"/>
-    </LinearLayout>
-    <ImageButton android:id="@+id/scan_torch" android:layout_width="64dp" android:layout_height="64dp" android:layout_gravity="bottom|center_horizontal" android:layout_marginBottom="48dp" android:padding="18dp" android:src="@drawable/ic_flashlight" android:background="@drawable/scan_tool_background" android:contentDescription="打开手电筒" android:tooltipText="打开手电筒"/>
-</FrameLayout>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android" xmlns:tools="http://schemas.android.com/tools" android:layout_width="match_parent" android:layout_height="match_parent" android:orientation="vertical" android:background="@drawable/scan_sheet_background">
+    <!-- Miuix 底部面板：background 底色、上沿 28dp 圆角；顶部拖拽手柄 + 返回胶囊按钮 + 32sp 标题 + 13sp 副标题，结构与主页/登录页一致；相机取景区以卡片形式内嵌。 -->
+    <View android:layout_width="36dp" android:layout_height="4dp" android:layout_gravity="center_horizontal" android:layout_marginTop="8dp" android:background="@drawable/scan_drag_handle"/>
+    <TextView android:id="@+id/scan_back" android:layout_width="wrap_content" android:layout_height="40dp" android:layout_marginStart="12dp" android:layout_marginTop="8dp" android:paddingHorizontal="20dp" android:gravity="center" android:background="@drawable/scan_text_button_background" android:text="返回" android:textColor="@color/miuix_on_secondary_variant" android:textSize="17sp" android:clickable="true" android:focusable="true" android:contentDescription="返回" android:tooltipText="返回"/>
+    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="14dp" android:paddingHorizontal="28dp" android:text="扫码" android:textColor="@color/miuix_on_background" android:textSize="32sp"/>
+    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="2dp" android:paddingHorizontal="28dp" android:text="对准车辆二维码，自动识别车号" android:textColor="@color/miuix_on_surface_variant_summary" android:textSize="13sp"/>
+    <Space android:layout_width="match_parent" android:layout_height="20dp"/>
+    <FrameLayout android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1" android:layout_marginHorizontal="16dp" android:background="@drawable/scan_camera_background">
+        <com.journeyapps.barcodescanner.DecoratedBarcodeView android:id="@+id/zxing_barcode_scanner" android:layout_width="match_parent" android:layout_height="match_parent"/>
+    </FrameLayout>
+    <FrameLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:paddingTop="16dp" android:paddingBottom="24dp">
+        <!-- PortraitScanActivity 继承 ZXing CaptureActivity（android.app.Activity），非 AppCompat，ImageButton 以原生方式 inflate，必须用 android:tint。 -->
+        <ImageButton android:id="@+id/scan_torch" android:layout_width="60dp" android:layout_height="60dp" android:layout_gravity="center_horizontal" android:padding="18dp" android:src="@drawable/ic_flashlight" android:tint="@drawable/scan_torch_tint" tools:ignore="UseAppTint" android:background="@drawable/scan_tool_background" android:contentDescription="打开手电筒" android:tooltipText="打开手电筒"/>
+    </FrameLayout>
+</LinearLayout>

@@ -1,1 +1,19 @@
-<selector xmlns:android="http://schemas.android.com/apk/res/android"><item android:state_selected="true"><shape android:shape="oval"><solid android:color="#087F70"/></shape></item><item><shape android:shape="oval"><solid android:color="#AA333333"/></shape></item></selector>
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 手电筒按钮：开启时为 Miuix primary 圆形实心按钮，关闭/无闪光灯时为 secondaryVariant 圆形按钮。 -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_selected="true">
+        <shape android:shape="oval">
+            <solid android:color="@color/miuix_primary"/>
+        </shape>
+    </item>
+    <item android:state_enabled="false">
+        <shape android:shape="oval">
+            <solid android:color="@color/miuix_secondary_variant"/>
+        </shape>
+    </item>
+    <item>
+        <shape android:shape="oval">
+            <solid android:color="@color/miuix_secondary_variant"/>
+        </shape>
+    </item>
+</selector>

@@ -7,14 +7,22 @@ import android.view.View
 import android.widget.TextView
 import com.google.android.material.button.MaterialButton
 
-/** View-based Miuix design tokens used while the app migrates to Compose. */
+/**
+ * View-based Miuix design tokens used while the app migrates to Compose.
+ * Values mirror top.yukonga.miuix.kmp:miuix-ui:0.9.0 lightColorScheme()/darkColorScheme()
+ * (see Colors.kt) and res/values(-night)/colors.xml. Update all three together.
+ */
 object MiuixComponents {
-    const val SURFACE = 0xffffffff.toInt()
-    const val PAGE = 0xffF4FAF7.toInt()
-    const val PRIMARY = 0xff006B5F.toInt()
-    const val ON_SURFACE = 0xff19352E.toInt()
-    const val SECONDARY = 0xff64736E.toInt()
-    const val OUTLINE = 0xffDCE9E4.toInt()
+    const val SURFACE = 0xffF7F7F7.toInt()
+    const val PAGE = 0xffffffff.toInt()
+    const val PRIMARY = 0xff3482FF.toInt()
+    const val ON_SURFACE = 0xff000000.toInt()
+    const val SECONDARY = 0xffE6E6E6.toInt()
+    const val OUTLINE = 0xffD9D9D9.toInt()
+    const val SECONDARY_VARIANT = 0xffF0F0F0.toInt()
+    const val ON_SECONDARY_VARIANT = 0xff303030.toInt()
+    const val ON_SURFACE_VARIANT_SUMMARY = 0x99000000.toInt()
+    const val DISABLED_ON_SURFACE = 0xffB2B2B2.toInt()
 
     @JvmStatic fun heading(view: TextView) {
         view.setTextColor(ON_SURFACE)

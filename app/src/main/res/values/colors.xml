@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Miuix 0.9.0 lightColorScheme() 令牌的 View 版镜像（只保留布局实际用到的），供竖屏扫码页使用。
+  数值与 top.yukonga.miuix.kmp:miuix-ui:0.9.0 的 Colors.kt 默认值一致，改版本时一起更新；
+  完整调色板见 ui/MiuixComponents.kt。
+-->
+<resources>
+    <color name="miuix_primary">#FF3482FF</color>
+    <color name="miuix_on_primary">#FFFFFFFF</color>
+    <color name="miuix_background">#FFFFFFFF</color>
+    <color name="miuix_on_background">#FF000000</color>
+    <color name="miuix_secondary_variant">#FFF0F0F0</color>
+    <color name="miuix_on_secondary_variant">#FF303030</color>
+    <color name="miuix_on_surface_variant_summary">#99000000</color>
+    <color name="miuix_sheet_drag_handle">#33000000</color>
+    <color name="miuix_disabled_on_surface">#FFB2B2B2</color>
+</resources>

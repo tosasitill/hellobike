@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Miuix 0.9.0 darkColorScheme() 令牌的 View 版镜像（只保留布局实际用到的），与 Compose 页面的 isSystemInDarkTheme() 分支一致。 -->
+<resources>
+    <color name="miuix_primary">#FF277AF7</color>
+    <color name="miuix_on_primary">#FFFFFFFF</color>
+    <color name="miuix_background">#FF242424</color>
+    <color name="miuix_on_background">#E6FFFFFF</color>
+    <color name="miuix_secondary_variant">#FF434343</color>
+    <color name="miuix_on_secondary_variant">#FFD9D9D9</color>
+    <color name="miuix_on_surface_variant_summary">#80FFFFFF</color>
+    <color name="miuix_sheet_drag_handle">#1AFFFFFF</color>
+    <color name="miuix_disabled_on_surface">#FF666666</color>
+</resources>

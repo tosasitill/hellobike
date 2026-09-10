@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 相机取景卡片：与 Miuix Card 一致的 16dp 圆角，黑色取景底。 -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <solid android:color="#FF000000"/>
+    <corners android:radius="16dp"/>
+</shape>

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Miuix 底部面板：页面上沿 28dp 圆角，底色与 BottomSheetDefaults.backgroundColor() 一致（background 令牌，浅色 #FFFFFF / 深色 #242424）。 -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <solid android:color="@color/miuix_background"/>
+    <corners android:topLeftRadius="28dp" android:topRightRadius="28dp"/>
+</shape>

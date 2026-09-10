@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Miuix 底部面板顶部拖拽手柄：36x4dp 圆角条，颜色 = onSurfaceVariantSummary 的 20% 透明度。 -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <solid android:color="@color/miuix_sheet_drag_handle"/>
+    <corners android:radius="2dp"/>
+</shape>

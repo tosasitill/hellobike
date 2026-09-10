@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 手电筒图标着色：开启时为 onPrimary（白），关闭时为 onSecondaryVariant，不可用时为禁用色。 -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_selected="true" android:color="@color/miuix_on_primary"/>
+    <item android:state_enabled="false" android:color="@color/miuix_disabled_on_surface"/>
+    <item android:color="@color/miuix_on_secondary_variant"/>
+</selector>

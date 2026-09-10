@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Miuix TextButton 底色：secondaryVariant 圆角胶囊（16dp 圆角、40dp 高），按压反馈由 MiuixComponents.pressFeedback 提供。 -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <solid android:color="@color/miuix_secondary_variant"/>
+    <corners android:radius="16dp"/>
+</shape>
