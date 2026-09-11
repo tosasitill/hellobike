@@ -5,7 +5,7 @@ import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Set;
 
-final class RideApi {
+public final class RideApi {
     interface Events { void add(String text); }
     private final JSONObject session;
     private final Gateway.Transport transport;

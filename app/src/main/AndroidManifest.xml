@@ -10,6 +10,7 @@
     <application android:label="轻骑" android:theme="@style/AppTheme" android:allowBackup="false" android:dataExtractionRules="@xml/data_extraction_rules" android:fullBackupContent="false" android:icon="@drawable/ic_launcher" android:usesCleartextTraffic="false" android:supportsRtl="true">
         <activity android:name=".PortraitScanActivity" android:screenOrientation="portrait" android:exported="false" android:stateNotNeeded="true" android:theme="@style/ScanSheetTheme"/>
         <activity android:name=".LoginActivity" android:screenOrientation="portrait" android:exported="false" android:windowSoftInputMode="adjustResize"/>
+        <activity android:name=".GlassDemoActivity" android:exported="true" android:configChanges="orientation|screenSize"/>
         <activity android:name=".MainActivity" android:exported="true" android:configChanges="orientation|screenSize">
             <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>
         </activity>

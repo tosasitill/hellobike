@@ -30,8 +30,8 @@
 
 ## 已实现
 
-- ZXing 相机二维码识别与手动车号输入；扫码页为 Miuix 风格底部面板（竖屏、连续对焦、手电筒开关，随系统深浅色切换，色调与主页/登录页一致）。
-- 官方 `c3x.me` 域名与 `n` 查询参数的本地解析子集；拒绝重复参数、其他主机、混合车型参数及非数字车号。
+- ZXing 相机二维码识别与手动车号输入；扫码页为 Miuix 风格底部面板（竖屏、连续对焦、手电筒开关，随系统深浅色切换，色调与主页/登录页一致）。识别成功后车号自动填入输入框（含启动时恢复的上次车号）。
+- 官方 `c3x.me` 域名与 `n`/`u` 查询参数的本地解析子集；拒绝重复参数、其他主机、混合车型参数（`m`/`e`/`x`/`s`/`c`/`p`）、`n` 与 `u` 并存及非数字车号。
 - HAR / 账号 JSON 导入、账号字段白名单、Keystore 加密、关闭备份和设备迁移。
 - 手机号验证码登录：`user.account.sendCodeV3`、官方滑块 `captchaType=1`、`user.account.login` 认证网关。
 - 本地 Keystore 失效时支持重新导入或重新登录并生成新密钥，不再反复解密旧密文。
@@ -42,6 +42,7 @@
 - WGS84 到 GCJ02 的常见近似转换，包含离线参考值测试。尚未与本设备定位 provider 或高德 SDK 做实测比较。
 - `user.ride.pre.ride`、开锁页价格读取、`user.ride.create`、骑行查询、`ride.hub.pre.close`、结束页读取。
 - 按订单 ID 校验状态，不将“请求成功受理”当作开锁成功。
+- 开锁与还车不再内联展开，改为 iOS 风格的居中液态玻璃弹窗确认；弹窗与底栏共用同一份玻璃配方（`ui/glass/LiquidGlassSurface.kt`）。
 - 预校验有效期 60 秒、还车位置确认有效期 30 秒、操作时禁用重复点击。
 - 持久化待确认操作，重启后先确认服务器状态；CLOSING 状态不因暂时仍显示骑行中而重新开放关锁按钮。
 - UI 不显示完整用户号、令牌、订单号或蓝牙数据；不记录请求体。
@@ -54,7 +55,9 @@
 - `com/hellobike/evehicle/scanservice/model/entity/ScanParam.java`：`SCAN_DOMAIN_NAME_1 = c3x.me`。
 - `com/hellobike/platform/scan/kernal/code/SupportCodeTypeHolder.java`：登记 n/m/e/x/u/s/c/p。
 - `com/alipay/alipaysecuritysdk/common/model/DynamicModel.java:20`：被 JADX 替换为常量引用的参数实际为 `n`，不是 `d`。
-- `com/hellobike/bike/core/scan/scanservice/BikeScanExecute.java:14`：普通单车侧登记 `n`、`u`，扩展还有 `e`。本原型只接受 `n`，不声称覆盖全部官方二维码。
+- `com/hellobike/bike/core/scan/scanservice/BikeScanExecute.java:14`：普通单车侧登记 `n`、`u`，扩展还有 `e`。
+- `com/hellobike/platform/scan/kernal/bean/ScanBean.java`：`isBikeType()` 把 `u` 与 `n` 都判为单车码，所以两者取值都直接作为 `bikeNo` 使用。
+- `com/hellobike/platform/scan/kernal/code/CodeAnalysisKt.java`：按 `n`、`m`、`e`、`x`、`u`、`s`、`c`、`p` 顺序取第一个非空参数。本原型接受其中的 `n` 与 `u`，其余仍拒绝，不声称覆盖全部官方二维码。
 - `com/hellobike/userbundle/business/login/swipecaptcha/SwipeCaptchaManager.java`：短信发送、滑块图片和偏移提交。
 - `com/hellobike/userbundle/business/login/presenter/VerificationCodePresenterImpl.java`：验证码登录 action 为 `user.account.login`。
 - `com/hellobike/gateway/enviroment/FinallyApiUrlKt.java`：认证网关为 `https://api.hellobike.com/auth`，平台短信接口为 `https://api.hellobike.com/api`。
@@ -103,7 +106,7 @@ node work/ride-compact/export-account.cjs
 - `app/build/reports/lint-results-debug.html`
 - `app/build/test-results/testDebugUnitTest/TEST-dev.local.ridecompact.CoreTest.xml`
 
-测试覆盖二维码白名单/重复参数、预校验超时、301 空订单、密钥失效恢复、账号缓存、验证码接口字段、短信滑块分支、登录响应映射、不可重复创建、关锁中不可重发、未知状态阻断、竖屏扫码 Activity/手电筒控件、坐标参考值、定位反查载荷与城市/行政区编码解析、真实 HAR 离线导入。未在真实车辆上进行在线开关锁验证。
+测试覆盖二维码白名单/重复参数（含 `n`、`u` 与 `n`+`u` 并存）、预校验超时、301 空订单、密钥失效恢复、账号缓存、验证码接口字段、短信滑块分支、登录响应映射、不可重复创建、关锁中不可重发、未知状态阻断、竖屏扫码 Activity/手电筒控件、坐标参考值、定位反查载荷与城市/行政区编码解析、真实 HAR 离线导入。未在真实车辆上进行在线开关锁验证。
 
 已知问题：在 JDK 17 下运行 `:app:testDebugUnitTest` 会有 1 项失败（`AndroidRegressionTest.mainAndLoginActivitiesStartWithoutAccountsOrNetwork`），原因是 Miuix 0.9.0 发布的是 Java 21 字节码，JVM 侧抛 `UnsupportedClassVersionError`。其余 40 项通过；改用 JDK 21 运行测试任务即可全部通过。
 

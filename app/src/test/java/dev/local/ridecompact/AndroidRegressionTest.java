@@ -20,7 +20,7 @@ import java.util.Map;
 import static org.junit.Assert.*;
 
 @RunWith(RobolectricTestRunner.class)
-@Config(sdk=28)
+@Config(sdk=33)
 public class AndroidRegressionTest {
     private JSONObject account() throws Exception {
         return new JSONObject().put("token","test-token-not-a-real-account").put("userGuid","test-user-guid-not-real")

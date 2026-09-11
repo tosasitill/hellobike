@@ -9,10 +9,19 @@ import static org.junit.Assert.*;
 public class CoreTest {
     @Test public void parsesOfficialNCode() { assertEquals("1234567890",ScanParser.parse("https://c3x.me/?n=1234567890").bikeNo); }
     @Test public void parsesHttpCodeWithoutOpeningIt() { assertEquals("1234567890",ScanParser.parse("http://c3x.me/?n=1234567890").bikeNo); }
+    @Test public void parsesOfficialUCode() { assertEquals("7920115443",ScanParser.parse("http://c3x.me/?u=7920115443").bikeNo); }
+    @Test public void reportsWhichCodeKeyMatched() {
+        assertEquals("c3x.me / n",ScanParser.parse("https://c3x.me/?n=1234").source);
+        assertEquals("c3x.me / u",ScanParser.parse("https://c3x.me/?u=1234").source);
+    }
+    @Test public void keepsOfficialFirstNonEmptyPrecedence() {
+        assertEquals("1234",ScanParser.parse("https://c3x.me/?n=1234&u=1234").bikeNo);
+        assertEquals("1234",ScanParser.parse("https://c3x.me/?n=&u=1234").bikeNo);
+    }
     @Test public void parsesManualCode() { assertEquals("1234567890",ScanParser.parse(" 1234567890 ").bikeNo); }
     @Test public void decodesPercentEncodedCode() { assertEquals("1234",ScanParser.parse("https://c3x.me/?n=%31%32%33%34").bikeNo); }
     @Test public void rejectsUntrustedAndAmbiguousCodes() {
-        for(String value:new String[]{"https://c3x.me.evil/?n=1234","https://evil/?n=1234","javascript:1234","https://c3x.me/?n=1234&n=5678","https://c3x.me/?m=1234","https://c3x.me/?n=1234&e=5678","https://user@c3x.me/?n=1234","https://c3x.me:443/?n=1234","https://c3x.me/?n=1","https://c3x.me/?n=%2F1234"}) {
+        for(String value:new String[]{"https://c3x.me.evil/?n=1234","https://evil/?n=1234","javascript:1234","https://c3x.me/?n=1234&n=5678","https://c3x.me/?m=1234","https://c3x.me/?n=1234&e=5678","https://c3x.me/?u=1234&e=5678","https://c3x.me/?n=1234&u=5678","https://c3x.me/?u=5678&n=1234","https://user@c3x.me/?n=1234","https://c3x.me:443/?n=1234","https://c3x.me/?n=1","https://c3x.me/?n=%2F1234","https://c3x.me/?u=1","https://c3x.me/?u=%2F1234","https://c3x.me/"}) {
             try { ScanParser.parse(value); fail("Accepted unsupported code"); } catch(IllegalArgumentException expected){}
         }
     }

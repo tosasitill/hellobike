@@ -163,4 +163,112 @@ public class ApiTest {
         try { RegionApi.parse(new JSONObject("{\"code\":0,\"data\":{\"status\":1,\"infoCode\":10000,\"data\":{\"reGeoCodesList\":[{\"addressComponent\":{\"cityCode\":\"\",\"adCode\":\"\"}}]}}}")); fail(); }
         catch(ApiResponse.Failure expected) {}
     }
+
+    private RideFlow flow(RideState state,JSONObject session,Gateway.Transport transport,long[] uptime,long[] wall) {
+        return new RideFlow(state,()->new RideApi(session,transport,false),()->new double[]{39.9,116.3},()->kotlin.Unit.INSTANCE,
+            text->kotlin.Unit.INSTANCE,ms->{uptime[0]+=ms;return kotlin.Unit.INSTANCE;},()->wall[0],()->uptime[0]);
+    }
+    private Gateway.Transport rideTransport(List<String> actions) {
+        boolean[] first={true};
+        return (url,p)->{
+            String action=p.getString("action"); actions.add(action);
+            if(action.equals("user.tw.ride.check")) {
+                if(first[0]) { first[0]=false; return ApiResponse.decode(action,200,"{\"code\":301,\"msg\":\"无骑行中订单\"}"); }
+                return new JSONObject().put("rideInfo",new JSONObject().put("rideGuid","TWorder-1").put("bikeNo","9170939366").put("rideStatus",0));
+            }
+            if(action.equals("user.ride.pre.ride")) return new JSONObject().put("result",true).put("causeType",1100).put("orderGuid","order-1").put("bikeType",0);
+            if(action.equals("tw.bike.unlock.page.basic.info")) return new JSONObject().put("ridePriceInfo",new JSONObject().put("priceRule","前1小时免费"));
+            if(action.equals("user.ride.create")) { assertEquals("order-1",p.getString("orderGuid")); return new JSONObject().put("result",true).put("rideId","order-1"); }
+            return new JSONObject().put("rideInfo",new JSONObject().put("rideGuid","TWorder-1").put("bikeNo","9170939366").put("rideStatus",0));
+        };
+    }
+    @Test public void flowRunsPrecheckCreateAndRidePolling() throws Exception {
+        RideState state=new RideState(); List<String> actions=new ArrayList<>();
+        RideFlow flow=flow(state,session(),rideTransport(actions),new long[]{0},new long[]{1700000000000L});
+        flow.prepare("9170939366");
+        assertEquals("前1小时免费",flow.getPriceRule());
+        assertTrue(flow.canOpen());
+        flow.open();
+        assertEquals(RideState.Stage.RIDING,state.stage);
+        assertEquals("order-1",state.order);
+        assertEquals(java.util.Arrays.asList("user.tw.ride.check","user.ride.pre.ride","tw.bike.unlock.page.basic.info","user.ride.create","user.tw.ride.check"),actions);
+    }
+    @Test public void flowRefusesOpenAfterPrecheckExpiry() throws Exception {
+        RideState state=new RideState(); List<String> actions=new ArrayList<>(); long[] wall={1700000000000L};
+        RideFlow flow=flow(state,session(),rideTransport(actions),new long[]{0},wall);
+        flow.prepare("9170939366");
+        wall[0]+=60001L;
+        assertFalse(flow.canOpen());
+        try { flow.open(); fail(); }catch(IllegalStateException expected){ assertTrue(expected.getMessage().contains("预校验已过期")); }
+        assertFalse(actions.contains("user.ride.create"));
+    }
+    @Test public void flowCloseRunsLocationCheckThenConfirmsEnd() throws Exception {
+        RideState state=new RideState(); state.stage=RideState.Stage.RIDING; state.order="order-1"; state.bike="9170939366";
+        List<String> actions=new ArrayList<>(); long[] uptime={0};
+        Gateway.Transport transport=(url,p)->{
+            String action=p.getString("action"); actions.add(action);
+            if(action.equals("ride.hub.pre.close")) {
+                if(p.getInt("operateType")==0) return new JSONObject().put("status",3).put("causeType",1103).put("penaltyFree",1);
+                assertEquals(1,p.getInt("poll"));
+                return new JSONObject().put("status",3).put("causeType",1103);
+            }
+            if(action.equals("user.tw.ride.check")) return ApiResponse.decode(action,200,"{\"code\":301}");
+            if(action.equals("user.ride.order.status")) return new JSONObject().put("rideStatus",30);
+            return new JSONObject().put("tradeRegionInfo",new JSONObject().put("orderStatus",2).put("orderInfo",new JSONObject().put("payAmount","1.5")))
+                .put("rideRegionInfo",new JSONObject().put("rideDuration",120).put("rideDistance","0.8"));
+        };
+        RideFlow flow=flow(state,session(),transport,uptime,new long[]{0});
+        flow.checkClose();
+        assertTrue(flow.closeCheckFresh());
+        flow.commitClose();
+        assertEquals(RideState.Stage.ENDED,state.stage);
+        assertFalse(flow.closeCheckFresh());
+        assertEquals(java.util.Arrays.asList("ride.hub.pre.close","ride.hub.pre.close","user.tw.ride.check","user.ride.order.status","tw.end.module.info"),actions);
+    }
+    @Test public void flowCloseCheckRejectsOutsideOperatingAreaWithoutCommitting() throws Exception {
+        RideState state=new RideState(); state.stage=RideState.Stage.RIDING; state.order="order-1"; state.bike="9170939366";
+        List<String> actions=new ArrayList<>();
+        Gateway.Transport transport=(url,p)->{ actions.add(p.getString("action")); return new JSONObject().put("status",2).put("causeType",1102); };
+        RideFlow flow=flow(state,session(),transport,new long[]{0},new long[]{0});
+        try { flow.checkClose(); fail(); }catch(ApiResponse.Failure e){ assertTrue(e.getMessage().contains("运营区外")); }
+        assertFalse(flow.closeCheckFresh());
+        assertEquals(RideState.Stage.RIDING,state.stage);
+        assertEquals(java.util.Arrays.asList("ride.hub.pre.close"),actions);
+    }
+    @Test public void flowRefreshRejectsOrderMismatch() throws Exception {
+        RideState state=new RideState(); state.stage=RideState.Stage.RIDING; state.order="order-1"; state.bike="9170939366";
+        Gateway.Transport transport=(url,p)->new JSONObject().put("rideInfo",new JSONObject().put("rideGuid","other-order").put("rideStatus",0));
+        RideFlow flow=flow(state,session(),transport,new long[]{0},new long[]{0});
+        try { flow.refresh(); fail(); }catch(IllegalStateException expected){ assertTrue(expected.getMessage().contains("不一致")); }
+        assertEquals("order-1",state.order);
+    }
+
+    @Test public void tokenSessionAcceptsKeyValuePaste() throws Exception {
+        JSONObject session=TokenSession.INSTANCE.parse("token=0123456789abcdef0123\nticket=ticket-value\nuserGuid=abcdef0123456789abcd\n",null,"010","110108");
+        assertEquals("0123456789abcdef0123",session.getString("token"));
+        assertEquals("ticket-value",session.getString("ticket"));
+        assertEquals("abcdef0123456789abcd",session.getString("userGuid"));
+        assertEquals("62",session.getString("systemCode"));
+    }
+    @Test public void tokenSessionReusesStoredIdentityAndRegionForBareToken() throws Exception {
+        JSONObject previous=new JSONObject().put("userGuid","previous-user-guid-1234").put("ticket","stored-ticket").put("cityCode","0755").put("adCode","440305");
+        JSONObject session=TokenSession.INSTANCE.parse("fresh-token-0123456789ab",previous,"","");
+        assertEquals("fresh-token-0123456789ab",session.getString("token"));
+        assertEquals("previous-user-guid-1234",session.getString("userGuid"));
+        assertEquals("stored-ticket",session.getString("ticket"));
+        assertEquals("0755",session.getString("cityCode"));
+        assertEquals("440305",session.getString("adCode"));
+    }
+    @Test public void tokenSessionFallsBackToResolvedRegionAndRejectsUnknownIdentity() throws Exception {
+        JSONObject identity=new JSONObject().put("userGuid","previous-user-guid-1234").put("cityCode","").put("adCode","");
+        JSONObject session=TokenSession.INSTANCE.parse("fresh-token-0123456789ab",identity,"010","110108");
+        assertEquals("010",session.getString("cityCode"));
+        assertEquals("110108",session.getString("adCode"));
+        try { TokenSession.INSTANCE.parse("fresh-token-0123456789ab",null,"",""); fail(); }
+        catch(IllegalArgumentException e){ assertTrue(e.getMessage().contains("用户号")); }
+        try { TokenSession.INSTANCE.parse("short",null,"",""); fail(); }
+        catch(IllegalArgumentException e){ assertTrue(e.getMessage().contains("token 无效")); }
+        try { TokenSession.INSTANCE.parse("",null,"010","110108"); fail(); }
+        catch(IllegalArgumentException expected){}
+    }
 }
